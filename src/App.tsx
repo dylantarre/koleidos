@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Plus, Shuffle, Moon, Sun, CheckCircle2, Loader2, Send, Menu, X, HelpCircle, Github, Settings } from 'lucide-react';
+import { Bot, Plus, Shuffle, Moon, Sun, CheckCircle2, Loader2, Send, Menu, X, HelpCircle, Github, Settings, Users, UserCheck, Target } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
 import { AuthModal } from './components/AuthModal';
@@ -14,6 +14,7 @@ import { generatePersonas } from './lib/personaGenerator';
 const emptyReport: TestReportType = {
   url: '',
   summary: '',
+  successes: [],
   recommendations: [],
   commonIssues: [],
   overallScore: 0,
@@ -94,6 +95,7 @@ function App() {
   }]);
   const [message, setMessage] = useState('');
   const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const [personaType, setPersonaType] = useState<'random' | 'potential'>('random');
 
   // Reset state when URL changes
   useEffect(() => {
@@ -147,20 +149,68 @@ function App() {
             const userMessages = prev.filter(msg => msg.sender === 'user');
             return [...userMessages, {
               id: Date.now().toString(),
-              content: 'Personas ready! Click "Start Testing" to begin the analysis.',
+              content: 'Generating personas...',
               sender: 'system',
               timestamp: Date.now(),
             }];
           });
 
           try {
-            const generatedPersonas = await generatePersonas(url);
-            setPersonas(generatedPersonas.map(p => ({
-              ...p,
-              status: 'idle'
-            })));
+            // Clear existing personas
+            setPersonas([]);
             
-            setReport({ ...emptyReport, url, totalTests: generatedPersonas.length });
+            // Set up initial report
+            setReport({ 
+              ...emptyReport, 
+              url, 
+              totalTests: 5,
+              successes: [],
+              recommendations: [],
+              commonIssues: []
+            });
+
+            // Create 5 placeholder personas first with stable IDs
+            const placeholders = Array(5).fill(null).map((_, i) => ({
+              id: `persona-${i + 1}`,
+              name: `Persona ${i + 1}`,
+              avatar: `/placeholder-avatar-${(i % 5) + 1}.png`,
+              type: personaType === 'random' ? 'Random Users' : 'Targeted Users',
+              description: 'Generating persona...',
+              status: 'loading' as const,
+              messages: [],
+              isLocked: false,
+              position: i // Add stable position index
+            }));
+            setPersonas(placeholders);
+            
+            // Generate personas progressively
+            await generatePersonas(url, 5, (persona, index) => {
+              setPersonas(prev => {
+                const readyCount = prev.filter(p => p.status === 'idle').length + 1;
+                if (readyCount === 5) {
+                  setChatMessages(prev => {
+                    const userMessages = prev.filter(msg => msg.sender === 'user');
+                    return [...userMessages, {
+                      id: Date.now().toString(),
+                      content: 'All personas are ready! Click "Start Testing" to begin the analysis.',
+                      sender: 'system',
+                      timestamp: Date.now(),
+                    }];
+                  });
+                }
+                
+                // Preserve the original ID and position from placeholders
+                const updatedPersona = {
+                  ...persona,
+                  id: `persona-${index + 1}`,
+                  position: index
+                };
+                
+                return prev.map(p => p.id === updatedPersona.id ? updatedPersona : p)
+                  .sort((a, b) => (a.position || 0) - (b.position || 0)); // Sort by position
+              });
+            }, personaType);
+            
           } catch (error) {
             console.error('Error generating personas:', error);
             setChatMessages(prev => {
@@ -187,7 +237,7 @@ function App() {
 
     const timeoutId = setTimeout(checkUrl, 500);
     return () => clearTimeout(timeoutId);
-  }, [urlInput]);
+  }, [urlInput, personaType]);
 
   const getRandomUrl = () => {
     const urls = [
@@ -498,15 +548,10 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsDark(!isDark)}
-                className="p-2 rounded-lg bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-colors"
-                aria-label="Toggle theme"
+                onClick={() => setIsDark(prev => !prev)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               >
-                {isDark ? (
-                  <Sun className="w-5 h-5 text-white" />
-                ) : (
-                  <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                )}
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
               
               <div ref={menuRef} className="relative">
@@ -560,7 +605,7 @@ function App() {
                       </button>
                     )}
                     <a
-                      href="https://github.com/stackblitz/koleidos"
+                      href="https://github.com/dylantarre/koleidos"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"
@@ -615,35 +660,46 @@ function App() {
               
               <div className="p-4 space-y-6">
                 <div className="space-y-2">
-                  <div className="relative">
-                    <input
-                      id="website-url"
-                      type="url"
-                      value={urlInput}
-                      onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="Enter a website URL..."
-                      className={`w-full px-4 py-2 bg-white/5 backdrop-blur-sm border rounded-lg focus:outline-none focus:ring-2 text-black dark:text-white placeholder-gray-400 shadow-glow-lg transition-all pr-10 ${
-                        urlInput.trim() === '' 
-                          ? 'border-purple-400/80 border focus:ring-purple-500 dark:border-purple-500/50' 
-                          : 'border-white/20 focus:ring-blue-500'
-                      }`}
-                      required
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      {isChecking ? (
-                        <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-                      ) : isUrlValid && (
-                        <CheckCircle2 className="w-5 h-5 text-green-500 checkmark-glow" fill="currentColor" />
-                      )}
+                  <div className="relative flex gap-2 items-center">
+                    <div className="flex-1 relative">
+                      <input
+                        id="website-url"
+                        type="url"
+                        value={urlInput}
+                        onChange={(e) => setUrlInput(e.target.value)}
+                        placeholder="Enter a website URL..."
+                        className={`w-full px-4 py-2 bg-white/5 backdrop-blur-sm border rounded-lg focus:outline-none focus:ring-2 text-black dark:text-white placeholder-gray-400 shadow-glow-lg transition-all pr-10 ${
+                          urlInput.trim() === '' 
+                            ? 'border-purple-400/80 border focus:ring-purple-500 dark:border-purple-500/50' 
+                            : 'border-white/20 focus:ring-blue-500'
+                        }`}
+                        required
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {isChecking ? (
+                          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                        ) : isUrlValid && (
+                          <CheckCircle2 className="w-5 h-5 text-green-500 checkmark-glow" fill="currentColor" />
+                        )}
+                      </div>
                     </div>
+                    <button
+                      onClick={() => setPersonaType(prev => prev === 'random' ? 'potential' : 'random')}
+                      className="px-3 py-2 bg-white/5 backdrop-blur-sm border border-white/20 rounded-lg hover:bg-white/10 transition-colors text-gray-600 dark:text-gray-300"
+                      title={`Currently: ${personaType === 'random' ? 'Random Users' : 'Targeted Users'} (click to switch)`}
+                    >
+                      {personaType === 'random' ? <Users className="w-5 h-5" /> : <Target className="w-5 h-5" />}
+                    </button>
+                   
                   </div>
-                  {isUrlValid && personas.length > 0 && !isLoading && (
+                  {isUrlValid && personas.length > 0 && (
                     <button
                       onClick={startTesting}
+                      disabled={!personas.some(p => p.status === 'idle')}
                       className="w-full px-4 py-2 bg-gradient-custom text-white rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-glow flex items-center justify-center gap-2"
                     >
                       <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : 'hidden'}`} />
-                      Start Testing
+                      Start Testing ({personas.filter(p => p.status === 'idle').length})
                     </button>
                   )}
                 </div>
@@ -679,43 +735,47 @@ function App() {
                       setChatMessages(prev => [...prev, userMessage]);
                       
                       let responseCount = 0;
-                      const totalPersonas = personas.length;
+                      const totalPersonas = personas.filter(p => p.status === 'idle' || p.status === 'completed').length;
                       const responses: string[] = [];
 
                       // Generate persona responses
                       personas.forEach(p => {
+                        if (p.status === 'idle' || p.status === 'completed') {
                           setTimeout(() => {
                             const responseText = `As ${p.type}, I think ${message.trim().toLowerCase().startsWith('what') ? 'that ' : ''}${message}`;
                             const response = {
-                              id: (Date.now() + Math.random()).toString(),
+                              id: Date.now().toString() + Math.random(),
                               content: responseText,
-                              sender: 'persona',
-                              timestamp: Date.now(),
+                              messageType: 'persona',
+                              timestamp: Date.now()
                             };
                             
+                            // Update the persona's messages
+                            setPersonas(prev =>
+                              prev.map(persona =>
+                                persona.id === p.id
+                                  ? { 
+                                      ...persona, 
+                                      messages: [...(persona.messages || []), response]
+                                    }
+                                  : persona
+                              )
+                            );
+
                             responses.push(`${p.name}: ${responseText}`);
                             responseCount++;
 
                             // If all personas have responded, add summary to main chat
                             if (responseCount === totalPersonas) {
-                              setTimeout(() => {
-                                setChatMessages(prev => [...prev, {
-                                  id: Date.now().toString(),
-                                  content: `Here's what our personas think:\n\n${responses.join('\n\n')}`,
-                                  sender: 'system',
-                                  timestamp: Date.now(),
-                                }]);
-                              }, 1000);
+                              setChatMessages(prev => [...prev, {
+                                id: Date.now().toString(),
+                                content: `Here's what our personas think:\n\n${responses.join('\n\n')}`,
+                                sender: 'system',
+                                timestamp: Date.now(),
+                              }]);
                             }
-
-                            setPersonas(prev =>
-                              prev.map(persona =>
-                                persona.id === p.id
-                                  ? { ...persona, messages: [...(persona.messages || []), response] }
-                                  : persona
-                              )
-                            );
-                          }, 1000 + Math.random() * 2000);
+                          }, 500 + Math.random() * 1500);
+                        }
                       });
 
                       setMessage('');
@@ -753,13 +813,6 @@ function App() {
           </div>
           <div className="lg:col-span-8 flex flex-col min-h-0">
             <div ref={reportContainerRef} className="overflow-visible">
-              {report && showReport && (
-                <div ref={reportRef}>
-                  <TestReport report={report} />
-                </div>
-              )}
-              
-              <div>
               {urlInput.trim() === '' && (
                 <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 p-8 text-center relative overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-custom opacity-[0.02]" />
@@ -799,32 +852,37 @@ function App() {
                 </div>
               )}
               {urlInput.trim() !== '' && (
-                <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr pb-6 persona-grid ${
-                  report && showReport ? 'persona-grid-shifted' : ''
-                }`}>
-                  {personas.map((persona, index) => {
-                    const row = Math.floor(index / 2);
-                    const col = index % 2;
-                    return (
-                      <PersonaCard
-                        key={persona.id}
-                        persona={persona}
-                        onRemove={removePersona}
-                        onRefresh={refreshPersona}
-                        onToggleLock={toggleLock}
-                        index={index}
-                        gridPosition={{ row, col }}
-                      />
-                    );
-                  })}
-                  <PersonaCard
-                    isControlCard
-                    onAdd={addRandomPersona}
-                    onShuffle={shufflePersonas}
-                  />
-                </div>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr pb-6">
+                    {personas.map((persona, index) => {
+                      const row = Math.floor(index / 2);
+                      const col = index % 2;
+                      return (
+                        <PersonaCard
+                          key={persona.id}
+                          persona={persona}
+                          onRemove={removePersona}
+                          onRefresh={refreshPersona}
+                          onToggleLock={toggleLock}
+                          index={index}
+                          gridPosition={{ row, col }}
+                        />
+                      );
+                    })}
+                    <PersonaCard
+                      isControlCard
+                      onAdd={addRandomPersona}
+                      onShuffle={shufflePersonas}
+                    />
+                  </div>
+                  
+                  {report && showReport && (
+                    <div ref={reportRef} className="mt-6">
+                      <TestReport report={report} />
+                    </div>
+                  )}
+                </>
               )}
-              </div>
             </div>
           </div>
         </div>

@@ -7,6 +7,7 @@ export interface Persona {
   description: string;
   status: 'idle' | 'loading' | 'testing' | 'completed';
   isLocked: boolean;
+  position?: number;
   feedback?: string;
   timeElapsed?: number;
   demographics?: {

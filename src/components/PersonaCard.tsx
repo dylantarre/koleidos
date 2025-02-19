@@ -134,43 +134,39 @@ export function PersonaCard({ persona, onRemove, onRefresh, onToggleLock, isCont
         </div>
       </div>
       <div className="persona-content flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" ref={chatContainerRef}>
-        <div className="flex items-start gap-3">
-          <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-2 max-w-[90%] text-sm">
-            <span className="line-clamp-2">{persona.description}</span>
+        <div className="flex items-start gap-2 mb-1">
+          <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 text-sm">
+            <span>{persona.description}</span>
           </div>
-        </div>        
+        </div>
+
+        {persona.messages?.filter(msg => msg.messageType === 'persona').map(msg => (
+          <div key={msg.id} className="flex items-start gap-1.5 mb-1">
+            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 text-sm">
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        
         {persona.status === 'testing' && (
-          <div className="flex items-start gap-3">
-            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-2 max-w-[90%] flex items-center gap-1.5 text-sm">
+          <div className="flex items-start gap-2 mb-1">
+            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 max-w-[90%] flex items-center gap-1.5 text-sm">
               <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
               Testing your website...
             </div>
           </div>
-        )}        
-        {persona.status === 'completed' && (
-          <>
-            <div className="flex items-start gap-3">
-              <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-2 max-w-[90%] text-sm">
-                <div className="flex items-center gap-1.5 text-green-500 mb-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Testing completed in {persona.timeElapsed}s
-                </div>
-                {persona.feedback}
+        )}
+        
+        {persona.status === 'completed' && !persona.messages?.length && (
+          <div className="flex items-start gap-2 mb-1">
+            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 max-w-[90%] text-sm">
+              <div className="flex items-center gap-1.5 text-green-500 mb-0.5">
+                <CheckCircle2 className="w-3 h-3" />
+                Testing completed in {persona.timeElapsed}s
               </div>
+              {persona.feedback}
             </div>
-            
-            {persona.messages?.map(msg => (
-              msg.sender === 'persona' ? (
-                <div key={msg.id} className="flex items-start gap-2 px-2">
-                  <div className="rounded-lg p-2 w-full text-sm bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300">
-                    <div className="text-xs text-blue-500 dark:text-blue-400">{persona.name}</div>
-                    {msg.content}
-                  </div>
-                </div>
-              ) : null
-            ))}
-            <div ref={chatEndRef} className="h-0" />
-          </>
+          </div>
         )}
       </div>
       
