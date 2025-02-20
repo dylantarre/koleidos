@@ -26,11 +26,24 @@ export function isValidUrl(urlString: string): boolean {
 
 export async function checkWebsiteAvailability(urlString: string): Promise<boolean> {
   try {
-    // For now, just validate the URL format
-    // This is more reliable than trying to check availability
-    // which can be affected by CORS and network issues
-    return isValidUrl(urlString);
+    if (!isValidUrl(urlString)) return false;
+
+    // Add protocol if missing
+    let urlToTest = urlString.trim().toLowerCase();
+    if (!urlToTest.startsWith('http://') && !urlToTest.startsWith('https://')) {
+      urlToTest = `https://${urlToTest}`;
+    }
+
+    // Use a proxy to avoid CORS issues
+    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(urlToTest);
+    const response = await fetch(proxyUrl);
+    
+    if (!response.ok) return false;
+    
+    const data = await response.json();
+    return data.status.http_code === 200;
   } catch (error) {
+    console.error('Error checking website availability:', error);
     return false;
   }
 }

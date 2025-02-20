@@ -1,84 +1,57 @@
 import type { Persona } from '../types';
 
-const API_ENDPOINT = 'https://faas-nyc1-2ef2e6cc.doserverless.co/api/v1/web/fn-4e471e25-87cf-4454-973a-278972bb9aa4/personas/generate';
+const PLACEHOLDER_NAMES = [
+  'Analytical Anna',
+  'Digital David',
+  'Mobile Maria',
+  'Social Sophie',
+  'Gaming Gary',
+  'Remote Rachel',
+  'Trendy Tyler',
+  'Eco-conscious Emma'
+];
 
-export async function generatePersona(url: string, personaType: 'random' | 'potential' = 'potential'): Promise<Persona> {
-  const response = await fetch(API_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ 
-      url, 
-      personaType,
-      template: personaType === 'random' ? 'RANDOM_PERSONA_TEMPLATE' : 'POTENTIAL_USER_TEMPLATE'
-    })
-  });
+const PLACEHOLDER_TYPES = [
+  'Digital Native',
+  'Remote Worker',
+  'Social Media Expert',
+  'Mobile-First User',
+  'Tech Enthusiast',
+  'Casual Browser',
+  'Power User'
+];
 
-  const data = await response.json();
-  
-  if (!response.ok) {
-    console.error('Server error:', data);
-    throw new Error(data.error || data.details || 'Failed to generate persona');
-  }
+const PLACEHOLDER_DESCRIPTIONS = [
+  'Expects seamless digital experiences across all devices',
+  'Values efficiency and clear navigation in applications',
+  'Highly engaged with social features and sharing capabilities',
+  'Primarily accesses content through mobile devices',
+  'Early adopter of new technologies and features',
+  'Prefers simple and straightforward interfaces',
+  'Looks for advanced features and customization options'
+];
 
+const PLACEHOLDER_AVATARS = [
+  'https://api.dicebear.com/7.x/personas/svg?seed=1',
+  'https://api.dicebear.com/7.x/personas/svg?seed=2',
+  'https://api.dicebear.com/7.x/personas/svg?seed=3',
+  'https://api.dicebear.com/7.x/personas/svg?seed=4',
+  'https://api.dicebear.com/7.x/personas/svg?seed=5'
+];
+
+export function generatePlaceholderPersona(index: number): Persona {
   return {
-    ...data,
-    id: Date.now().toString() + Math.random(),
+    id: `persona-${index + 1}`,
+    name: PLACEHOLDER_NAMES[index % PLACEHOLDER_NAMES.length],
+    type: PLACEHOLDER_TYPES[index % PLACEHOLDER_TYPES.length],
+    description: PLACEHOLDER_DESCRIPTIONS[index % PLACEHOLDER_DESCRIPTIONS.length],
+    avatar: PLACEHOLDER_AVATARS[index % PLACEHOLDER_AVATARS.length],
     status: 'idle',
     isLocked: false,
     messages: []
   };
 }
 
-export async function generatePersonas(
-  url: string,
-  count: number,
-  onProgress: (persona: Persona, index: number) => void,
-  personaType: 'random' | 'potential' = 'potential'
-): Promise<Persona[]> {
-  const personas: Persona[] = [];
-
-  for (let i = 0; i < count; i++) {
-    // Create placeholder persona
-    const placeholderPersona: Persona = {
-      id: `persona-${i + 1}`,
-      name: `Persona ${i + 1}`,
-      avatar: `/placeholder-avatar-${(i % 5) + 1}.png`,
-      type: personaType === 'random' ? 'Random User' : 'Potential User',
-      description: 'Generating persona...',
-      status: 'loading',
-      messages: [],
-      isLocked: false,
-      timeElapsed: 0,
-      feedback: ''
-    };
-
-    onProgress(placeholderPersona, i);
-
-    try {
-      const persona = await generatePersona(url, personaType);
-      const finalPersona: Persona = {
-        ...persona,
-        id: placeholderPersona.id,
-        status: 'idle',
-        messages: []
-      };
-
-      personas.push(finalPersona);
-      onProgress(finalPersona, i);
-    } catch (error) {
-      console.error('Error generating persona:', error);
-      const errorPersona: Persona = {
-        ...placeholderPersona,
-        description: 'Error generating persona',
-        status: 'completed',
-        feedback: 'Failed to generate persona. Please try again.',
-      };
-      personas.push(errorPersona);
-      onProgress(errorPersona, i);
-    }
-  }
-
-  return personas;
+export function generatePersonas(count: number): Persona[] {
+  return Array(count).fill(null).map((_, index) => generatePlaceholderPersona(index));
 } 

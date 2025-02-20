@@ -1,38 +1,31 @@
 import React from 'react';
-import { CheckCircle2, Loader2, Plus, Shuffle, Star, Send, User, Lock, Unlock, RefreshCw, X } from 'lucide-react';
-import { SubscriptionPopup } from './SubscriptionPopup';
+import { Plus, Shuffle, User, Star, RefreshCw } from 'lucide-react';
 import { PersonaDetailsModal } from './PersonaDetailsModal';
 import type { Persona } from '../types';
 
 interface PersonaCardProps {
   persona?: Persona;
-  onRemove?: (id: string) => void;
+  isControlCard?: boolean;
   onRefresh?: (id: string) => void;
   onToggleLock?: (id: string) => void;
-  isControlCard?: boolean;
   onAdd?: () => void;
   onShuffle?: () => void;
   index?: number;
-  gridPosition?: { row: number; col: number };
+  viewMode: 'grid' | 'list';
 }
 
-export function PersonaCard({ persona, onRemove, onRefresh, onToggleLock, isControlCard, onAdd, onShuffle, index = 0, gridPosition }: PersonaCardProps) {
-  const [showSubscriptionPopup, setShowSubscriptionPopup] = React.useState(false);
+export function PersonaCard({
+  persona,
+  isControlCard,
+  onRefresh,
+  onToggleLock,
+  onAdd,
+  onShuffle,
+  index,
+  viewMode
+}: PersonaCardProps) {
   const [showDetailsModal, setShowDetailsModal] = React.useState(false);
-  const chatEndRef = React.useRef<HTMLDivElement>(null);
-  const [isNew, setIsNew] = React.useState(true);
-  const cardRef = React.useRef<HTMLDivElement>(null);
   const chatContainerRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    setIsNew(true);
-    const totalPersonas = 5; // Base number of personas
-    const baseDelay = 100;
-    const staggerDelay = 80;
-    const reverseIndex = totalPersonas - (index ?? 0);
-    const timer = setTimeout(() => setIsNew(false), baseDelay + (reverseIndex * staggerDelay));
-    return () => clearTimeout(timer);
-  }, [persona?.id, index]);
 
   // Scroll to bottom whenever messages change
   React.useEffect(() => {
@@ -41,76 +34,41 @@ export function PersonaCard({ persona, onRemove, onRefresh, onToggleLock, isCont
     }
   }, [persona?.messages]);
 
-  if (isControlCard && onAdd && onShuffle) {
+  if (isControlCard) {
     return (
-      <>
-        <div ref={cardRef} className="bg-white dark:bg-darker-blue/50 rounded-lg shadow-md border border-gray-100 dark:border-white/10 p-4 flex flex-col h-[200px]">
-          <h3 className="font-semibold text-sm dark:text-white mb-3 pb-2 border-b border-gray-100 dark:border-white/10">Persona Controls</h3>
-          <div className="grid grid-cols-2 gap-2 flex-grow">
-            <button
-              onClick={() => setShowSubscriptionPopup(true)}
-              className="flex flex-col items-center justify-center gap-2 bg-gray-50 dark:bg-white/5 backdrop-blur-sm rounded-lg border border-gray-100 dark:border-white/10 hover:shadow-glow transition-all cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-custom flex items-center justify-center">
-                <Plus className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-xs text-gray-600 dark:text-gray-400 text-center">
-                Add New Persona
-              </span>
-            </button>
-          
-            <button
-              onClick={onShuffle}
-              className="flex flex-col items-center justify-center gap-2 bg-gray-50 dark:bg-white/5 backdrop-blur-sm rounded-lg border border-gray-100 dark:border-white/10 hover:shadow-glow transition-all cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-custom flex items-center justify-center">
-                <Shuffle className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-xs text-gray-600 dark:text-gray-400 text-center">
-                New Personas
-              </span>
-            </button>
-          </div>
-        </div>
-        <SubscriptionPopup
-          isOpen={showSubscriptionPopup}
-          onClose={() => setShowSubscriptionPopup(false)}
-        />
-      </>
+      <div className={`persona-card flex ${viewMode === 'list' ? 'h-16' : 'flex-col h-full'} items-center justify-center gap-4 bg-white/5`}>
+        <button
+          onClick={onAdd}
+          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-gray-600 dark:text-gray-400"
+          title="Add Persona"
+        >
+          <Plus className="w-5 h-5" />
+        </button>
+        <button
+          onClick={onShuffle}
+          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-gray-600 dark:text-gray-400"
+          title="Shuffle Personas"
+        >
+          <Shuffle className="w-5 h-5" />
+        </button>
+      </div>
     );
   }
 
   if (!persona) return null;
 
-  const isLoading = persona.status === 'loading';
-
-  return (
+  const cardContent = (
     <>
-    <div 
-      className={`persona-card h-[200px] flex flex-col relative ${isNew ? 'animate-slide-in' : ''} ${
-        isLoading ? 'animate-pulse' : ''
-      }`}
-      style={{
-        animationDelay: `${index * 0.1}s`,
-      }}
-    >
-      <div className="persona-header">
-        <div className="flex items-center gap-3">
-          <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-white/10 shrink-0">
-            {isLoading ? (
-              <div className="absolute inset-0 bg-gray-300 dark:bg-gray-600 animate-pulse" />
-            ) : (
-              <img
-                src={persona.avatar}
-                alt={persona.name}
-                className="w-full h-full object-cover object-center"
-                loading="lazy"
-              />
-            )}
-          </div>
+      <div className={`persona-header ${viewMode === 'list' ? 'mb-0 pb-0 border-0' : ''}`}>
+        <div className="flex items-center gap-2">
+          <img
+            src={persona.avatar}
+            alt={persona.name}
+            className="w-8 h-8 rounded-full object-cover ring-2 ring-white/10"
+          />
           <div>
             <h3 className="persona-name">{persona.name}</h3>
-            <span className="persona-type">{persona.type}</span>
+            <p className="persona-type">{persona.type}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -122,98 +80,161 @@ export function PersonaCard({ persona, onRemove, onRefresh, onToggleLock, isCont
             <User className="w-4 h-4" />
           </button>
           <button
-            className="favorite-button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleLock?.(persona.id);
-            }}
-            title={persona.isLocked ? "Remove from favorites" : "Add to favorites"}
+            onClick={() => onToggleLock?.(persona.id)}
+            className={`transition-colors ${persona.isLocked ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
+            title={persona.isLocked ? 'Unfavorite' : 'Favorite'}
           >
-            <Star className={`w-4 h-4 ${persona.isLocked ? 'text-yellow-400 star-glow fill-current' : ''}`} />
+            <Star className="w-4 h-4" fill={persona.isLocked ? "currentColor" : "none"} />
+          </button>
+          <button
+            onClick={() => onRefresh?.(persona.id)}
+            className={`transition-colors ${
+              persona.isLocked 
+                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' 
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+            title={persona.isLocked ? 'Cannot refresh favorited persona' : 'Refresh'}
+            disabled={persona.isLocked}
+          >
+            <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </div>
-      <div className="persona-content flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" ref={chatContainerRef}>
-        <div className="flex items-start gap-2 mb-1">
-          <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 text-sm">
-            <span>{persona.description}</span>
-          </div>
+      {viewMode === 'grid' && (
+        <div className="persona-content">
+          <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-words">
+            {persona.description}
+          </p>
+          {persona.feedback && (
+            <div className="mt-2 p-2 bg-white/5 rounded-lg">
+              <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-words">
+                {persona.feedback}
+              </p>
+              {persona.timeElapsed && (
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                  Completed in {persona.timeElapsed}s
+                </p>
+              )}
+            </div>
+          )}
         </div>
+      )}
+    </>
+  );
 
-        {persona.messages?.filter(msg => msg.messageType === 'persona').map(msg => (
-          <div key={msg.id} className="flex items-start gap-1.5 mb-1">
-            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 text-sm">
-              {msg.content}
-            </div>
-          </div>
-        ))}
-        
-        {persona.status === 'testing' && (
-          <div className="flex items-start gap-2 mb-1">
-            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 max-w-[90%] flex items-center gap-1.5 text-sm">
-              <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-              Testing your website...
-            </div>
-          </div>
-        )}
-        
-        {persona.status === 'completed' && !persona.messages?.length && (
-          <div className="flex items-start gap-2 mb-1">
-            <div className="bg-white/5 backdrop-blur-sm text-gray-700 dark:text-gray-300 rounded-lg p-1.5 max-w-[90%] text-sm">
-              <div className="flex items-center gap-1.5 text-green-500 mb-0.5">
-                <CheckCircle2 className="w-3 h-3" />
-                Testing completed in {persona.timeElapsed}s
+  return (
+    <>
+      <div 
+        className={`persona-card ${
+          viewMode === 'list' 
+            ? 'flex items-center h-[68px] px-4 py-3 gap-4' 
+            : 'flex flex-col h-full px-4 py-3'
+        } ${
+          persona.status === 'testing' ? 'animate-pulse' : ''
+        }`}
+        style={{
+          animationDelay: `${index ? index * 0.1 : 0}s`,
+        }}
+      >
+        {viewMode === 'list' ? (
+          <>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <img
+                src={persona.avatar}
+                alt={persona.name}
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-white/10"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="persona-name truncate">{persona.name}</h3>
+                  <span className="persona-type text-xs truncate">({persona.type})</span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  {persona.description}
+                </p>
               </div>
-              {persona.feedback}
+              {persona.status === 'completed' && (
+                <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500 shrink-0">
+                  <span>Completed in {persona.timeElapsed}s</span>
+                </div>
+              )}
             </div>
-          </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={() => setShowDetailsModal(true)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                title="View profile"
+              >
+                <User className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onToggleLock?.(persona.id)}
+                className={`transition-colors ${persona.isLocked ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
+                title={persona.isLocked ? 'Unfavorite' : 'Favorite'}
+              >
+                <Star className="w-4 h-4" fill={persona.isLocked ? "currentColor" : "none"} />
+              </button>
+              <button
+                onClick={() => onRefresh?.(persona.id)}
+                className={`transition-colors ${
+                  persona.isLocked 
+                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' 
+                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                }`}
+                title={persona.isLocked ? 'Cannot refresh favorited persona' : 'Refresh'}
+                disabled={persona.isLocked}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        ) : (
+          cardContent
         )}
       </div>
-      
-    </div>
-    <PersonaDetailsModal
-      persona={{
-        ...persona,
-        demographics: [
-          { label: 'Age', value: '28' },
-          { label: 'Location', value: 'San Francisco, CA' },
-          { label: 'Occupation', value: 'UX Designer' },
-          { label: 'Education', value: "Bachelor's in HCI" }
-        ],
-        goals: [
-          'Create intuitive user experiences',
-          'Stay updated with latest design trends',
-          'Collaborate effectively with developers'
-        ],
-        frustrations: [
-          'Complex technical documentation',
-          'Lack of design system consistency',
-          'Limited user research resources'
-        ],
-        behaviors: [
-          'Regularly participates in design workshops',
-          'Active in online UX communities',
-          'Conducts informal user testing sessions'
-        ],
-        motivations: [
-          'Passion for solving user problems',
-          'Drive to create accessible designs',
-          'Interest in emerging technologies'
-        ],
-        techProficiency: {
-          high: 'Design tools (Figma, Sketch)',
-          moderate: 'Frontend development',
-          low: 'Backend systems'
-        },
-        preferredChannels: [
-          'Design blogs and forums',
-          'Professional social networks',
-          'Industry conferences and meetups'
-        ]
-      }}
-      isOpen={showDetailsModal}
-      onClose={() => setShowDetailsModal(false)}
-    />
+      <PersonaDetailsModal
+        persona={{
+          ...persona,
+          demographics: [
+            { label: 'Age', value: '28' },
+            { label: 'Location', value: 'San Francisco, CA' },
+            { label: 'Occupation', value: 'UX Designer' },
+            { label: 'Education', value: "Bachelor's in HCI" }
+          ],
+          goals: [
+            'Create intuitive user experiences',
+            'Stay updated with latest design trends',
+            'Collaborate effectively with developers'
+          ],
+          frustrations: [
+            'Complex technical documentation',
+            'Lack of design system consistency',
+            'Limited user research resources'
+          ],
+          behaviors: [
+            'Regularly participates in design workshops',
+            'Active in online UX communities',
+            'Conducts informal user testing sessions'
+          ],
+          motivations: [
+            'Passion for solving user problems',
+            'Drive to create accessible designs',
+            'Interest in emerging technologies'
+          ],
+          techProficiency: {
+            high: 'Design tools (Figma, Sketch)',
+            moderate: 'Frontend development',
+            low: 'Backend systems'
+          },
+          preferredChannels: [
+            'Design blogs and forums',
+            'Professional social networks',
+            'Industry conferences and meetups'
+          ]
+        }}
+        isOpen={showDetailsModal}
+        onClose={() => setShowDetailsModal(false)}
+      />
     </>
   );
 }

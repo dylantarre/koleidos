@@ -33,7 +33,7 @@ export function ChatMessage({ content, sender, avatar, onViewReport }: ChatMessa
     >
       {isCompletionMessage && onViewReport ? (
         <div className="space-y-1">
-          <div>Testing complete! I've analyzed <strong>{content.split(' ').slice(4, -11).join(' ')}</strong> with all personas.</div>
+          <div>Testing complete! I've analyzed <strong className="break-all">{content.split(' ').slice(4, -11).join(' ')}</strong> with all personas.</div>
           <div className="mt-2">
             Would you like to{' '}
             <button
@@ -46,7 +46,11 @@ export function ChatMessage({ content, sender, avatar, onViewReport }: ChatMessa
           </div>
         </div>
       ) : (
-        content
+        <div className="flex-1">
+          <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-words">
+            {content}
+          </p>
+        </div>
       )}
       </div>
     </div>

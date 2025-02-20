@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Plus, Shuffle, Moon, Sun, CheckCircle2, Loader2, Send, Menu, X, HelpCircle, Github, Settings, Users, UserCheck, Target } from 'lucide-react';
+import { Bot, Shuffle, Moon, Sun, CheckCircle2, Loader2, Send, Menu, X, HelpCircle, Github, Settings, Users, Target, LayoutGrid, List } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
 import { AuthModal } from './components/AuthModal';
-import { ChatInput } from './components/ChatInput';
 import { PersonaCard } from './components/PersonaCard';
 import { ChatMessage } from './components/ChatMessage';
 import { TestReport } from './components/TestReport';
@@ -11,67 +10,18 @@ import type { Persona, TestReport as TestReportType } from './types';
 import { isValidUrl, checkWebsiteAvailability } from './utils/url';
 import { generatePersonas } from './lib/personaGenerator';
 
-const emptyReport: TestReportType = {
-  url: '',
-  summary: '',
-  successes: [],
-  recommendations: [],
-  commonIssues: [],
-  overallScore: 0,
-  completedTests: 0,
-  totalTests: 0
-};
-
 function App() {
-  const { user, profile, preferences, loading: authLoading } = useAuth();
+  const { user, profile } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const logoRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [isLogoInView, setIsLogoInView] = React.useState(true);
   const [shouldAnimateLogo, setShouldAnimateLogo] = React.useState(true);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsLogoInView(true);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      {
-        threshold: 0.5,
-        rootMargin: '-100px'
-      }
-    );
-
-    if (logoRef.current) {
-      observer.observe(logoRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [report, setReport] = useState<TestReportType | null>(null);
   const [showReport, setShowReport] = useState(false);
-  const [isReportVisible, setIsReportVisible] = useState(false);
   const reportContainerRef = React.useRef<HTMLDivElement>(null);
   const reportRef = React.useRef<HTMLDivElement>(null);
   const [isDark, setIsDark] = useState(() => 
@@ -94,8 +44,8 @@ function App() {
     timestamp: Date.now(),
   }]);
   const [message, setMessage] = useState('');
-  const chatEndRef = React.useRef<HTMLDivElement>(null);
   const [personaType, setPersonaType] = useState<'random' | 'potential'>('random');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   // Reset state when URL changes
   useEffect(() => {
@@ -110,134 +60,79 @@ function App() {
     // Reset report and visibility
     setReport(null);
     setShowReport(false);
-    setIsReportVisible(false);
     
     // Reset personas to initial state
     setPersonas([]);
   }, [urlInput]);
 
-  useEffect(() => {
-    const checkUrl = async () => {
-      const url = urlInput.trim();
-      if (!url || url.length < 3) {
+  const checkUrl = async () => {
+    const url = urlInput.trim();
+    if (!url || url.length < 3) {
+      setIsUrlValid(false);
+      return;
+    }
+
+    try {
+      const isValid = isValidUrl(url);
+      if (!isValid) {
         setIsUrlValid(false);
         return;
       }
 
-      const currentUrl = url;
-
-      try {
-        const isValid = isValidUrl(url);
-        if (!isValid) {
-          setIsUrlValid(false);
-          return;
-        }
-
-        if (currentUrl !== urlInput.trim()) return;
-        setIsChecking(true);
-
-        const isAvailable = await checkWebsiteAvailability(url);
-        if (currentUrl !== urlInput.trim()) return;
+      setIsChecking(true);
+      const isAvailable = await checkWebsiteAvailability(url);
+      setIsUrlValid(isAvailable);
+      
+      if (isAvailable) {
+        setIsLoading(true);
         
-        setIsUrlValid(isAvailable);
-        
-        if (isAvailable) {
-          setIsLoading(true);
+        setChatMessages(prev => {
+          const userMessages = prev.filter(msg => msg.sender === 'user');
+          return [...userMessages, {
+            id: Date.now().toString(),
+            content: 'Generating personas...',
+            sender: 'system',
+            timestamp: Date.now(),
+          }];
+        });
+
+        try {
+          setPersonas(generatePersonas(5));
           
-          // Update system message
           setChatMessages(prev => {
             const userMessages = prev.filter(msg => msg.sender === 'user');
             return [...userMessages, {
               id: Date.now().toString(),
-              content: 'Generating personas...',
+              content: 'All personas are ready! Click "Start Testing" to begin the analysis.',
               sender: 'system',
               timestamp: Date.now(),
             }];
           });
-
-          try {
-            // Clear existing personas
-            setPersonas([]);
-            
-            // Set up initial report
-            setReport({ 
-              ...emptyReport, 
-              url, 
-              totalTests: 5,
-              successes: [],
-              recommendations: [],
-              commonIssues: []
-            });
-
-            // Create 5 placeholder personas first with stable IDs
-            const placeholders = Array(5).fill(null).map((_, i) => ({
-              id: `persona-${i + 1}`,
-              name: `Persona ${i + 1}`,
-              avatar: `/placeholder-avatar-${(i % 5) + 1}.png`,
-              type: personaType === 'random' ? 'Random Users' : 'Targeted Users',
-              description: 'Generating persona...',
-              status: 'loading' as const,
-              messages: [],
-              isLocked: false,
-              position: i // Add stable position index
-            }));
-            setPersonas(placeholders);
-            
-            // Generate personas progressively
-            await generatePersonas(url, 5, (persona, index) => {
-              setPersonas(prev => {
-                const readyCount = prev.filter(p => p.status === 'idle').length + 1;
-                if (readyCount === 5) {
-                  setChatMessages(prev => {
-                    const userMessages = prev.filter(msg => msg.sender === 'user');
-                    return [...userMessages, {
-                      id: Date.now().toString(),
-                      content: 'All personas are ready! Click "Start Testing" to begin the analysis.',
-                      sender: 'system',
-                      timestamp: Date.now(),
-                    }];
-                  });
-                }
-                
-                // Preserve the original ID and position from placeholders
-                const updatedPersona = {
-                  ...persona,
-                  id: `persona-${index + 1}`,
-                  position: index
-                };
-                
-                return prev.map(p => p.id === updatedPersona.id ? updatedPersona : p)
-                  .sort((a, b) => (a.position || 0) - (b.position || 0)); // Sort by position
-              });
-            }, personaType);
-            
-          } catch (error) {
-            console.error('Error generating personas:', error);
-            setChatMessages(prev => {
-              const userMessages = prev.filter(msg => msg.sender === 'user');
-              return [...userMessages, {
-                id: Date.now().toString(),
-                content: 'Sorry, there was an error generating personas. Please try again.',
-                sender: 'system',
-                timestamp: Date.now(),
-              }];
-            });
-          }
-          
-          setIsLoading(false);
+        } catch {
+          setChatMessages(prev => {
+            const userMessages = prev.filter(msg => msg.sender === 'user');
+            return [...userMessages, {
+              id: Date.now().toString(),
+              content: 'Sorry, there was an error generating personas. Please try again.',
+              sender: 'system',
+              timestamp: Date.now(),
+            }];
+          });
         }
-      } catch (error) {
-        if (currentUrl !== urlInput.trim()) return;
-        setIsUrlValid(false);
-      } finally {
-        if (currentUrl !== urlInput.trim()) return;
-        setIsChecking(false);
+        
+        setIsLoading(false);
       }
-    };
+    } catch {
+      setIsUrlValid(false);
+    } finally {
+      setIsChecking(false);
+    }
+  };
 
+  useEffect(() => {
     const timeoutId = setTimeout(checkUrl, 500);
     return () => clearTimeout(timeoutId);
-  }, [urlInput, personaType]);
+  }, [urlInput]);
 
   const getRandomUrl = () => {
     const urls = [
@@ -356,6 +251,10 @@ function App() {
     });
   }, [isDark]);
 
+  const isPersona = (obj: any): obj is Persona => {
+    return obj && typeof obj === 'object' && 'id' in obj && 'status' in obj;
+  };
+
   const startTesting = async () => {
     if (!isUrlValid || !personas.length) return;
     
@@ -385,12 +284,27 @@ function App() {
       const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       
       setPersonas(current =>
-        current.map(p => p.id === persona.id ? {
-          ...p,
-          status: 'completed',
-          feedback: `Found the website ${urlInput} to be quite interesting. The navigation could be improved...`,
-          timeElapsed: parseFloat(timeElapsed)
-        } : p)
+        current.map(p => {
+          if (p.id !== persona.id) return p;
+          
+          const updatedPersona = {
+            ...p,
+            status: 'completed' as const,
+            feedback: `Found the website ${urlInput} to be quite interesting. The navigation could be improved...`,
+            timeElapsed: parseFloat(timeElapsed),
+            messages: [
+              ...(p.messages || []),
+              {
+                id: Date.now().toString(),
+                content: `Testing completed in ${timeElapsed}s`,
+                messageType: 'persona' as const,
+                timestamp: Date.now()
+              }
+            ]
+          };
+          
+          return isPersona(updatedPersona) ? updatedPersona : p;
+        })
       );
 
       setReport(current => 
@@ -435,7 +349,6 @@ function App() {
       });
       
       setShowReport(true);
-      setIsReportVisible(true);
       
       setTimeout(() => {
         reportContainerRef.current?.scrollTo({
@@ -528,15 +441,33 @@ function App() {
     }));
   };
 
+  const handleGeneratePersonas = undefined;
+  const handleMessage = undefined;
+
   return (
     <div className="min-h-screen bg-gray-200 dark:bg-dark-blue transition-colors overflow-x-hidden">
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe')] opacity-10 mix-blend-overlay pointer-events-none" />
       <div className="container mx-auto px-4 py-6 min-h-screen flex flex-col">
         <header className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <div ref={logoRef} className={`flex items-center gap-3 transition-all duration-700 ${
-              isLogoInView && shouldAnimateLogo ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95'
-            }`}>
+            <div 
+              ref={logoRef} 
+              onClick={() => {
+                setUrlInput('');
+                setPersonas([]);
+                setReport(null);
+                setShowReport(false);
+                setChatMessages([{
+                  id: 'initial',
+                  content: 'Enter a website URL above and I\'ll help test it with our personas.',
+                  sender: 'system',
+                  timestamp: Date.now(),
+                }]);
+              }}
+              className={`flex items-center gap-3 transition-all duration-700 cursor-pointer ${
+                isLogoInView && shouldAnimateLogo ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95'
+              }`}
+            >
               <div className="p-2 rounded-xl bg-gradient-custom shadow-glow bounce-hover">
                 <Bot className="w-10 h-10 text-white bot-icon" />
               </div>
@@ -678,8 +609,11 @@ function App() {
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         {isChecking ? (
                           <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-                        ) : isUrlValid && (
-                          <CheckCircle2 className="w-5 h-5 text-green-500 checkmark-glow" fill="currentColor" />
+                        ) : urlInput.trim() !== '' && (
+                          <CheckCircle2 
+                            className={`w-5 h-5 ${isUrlValid ? 'text-green-500 checkmark-glow' : 'text-red-500 error-glow'}`} 
+                            fill="currentColor" 
+                          />
                         )}
                       </div>
                     </div>
@@ -813,6 +747,34 @@ function App() {
           </div>
           <div className="lg:col-span-8 flex flex-col min-h-0">
             <div ref={reportContainerRef} className="overflow-visible">
+              <div className="flex justify-between items-center mb-4">
+                {personas.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setViewMode('grid')}
+                      className={`p-2 rounded-lg transition-colors ${
+                        viewMode === 'grid' 
+                          ? 'bg-gradient-custom text-white' 
+                          : 'bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-white/10'
+                      }`}
+                      title="Grid View"
+                    >
+                      <LayoutGrid className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-2 rounded-lg transition-colors ${
+                        viewMode === 'list' 
+                          ? 'bg-gradient-custom text-white' 
+                          : 'bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-white/10'
+                      }`}
+                      title="List View"
+                    >
+                      <List className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
               {urlInput.trim() === '' && (
                 <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 p-8 text-center relative overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-custom opacity-[0.02]" />
@@ -853,7 +815,11 @@ function App() {
               )}
               {urlInput.trim() !== '' && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr pb-6">
+                  <div className={`${
+                    viewMode === 'grid' 
+                      ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr' 
+                      : 'flex flex-col gap-2'
+                  } pb-6`}>
                     {personas.map((persona, index) => {
                       const row = Math.floor(index / 2);
                       const col = index % 2;
@@ -866,6 +832,7 @@ function App() {
                           onToggleLock={toggleLock}
                           index={index}
                           gridPosition={{ row, col }}
+                          viewMode={viewMode}
                         />
                       );
                     })}
@@ -873,6 +840,7 @@ function App() {
                       isControlCard
                       onAdd={addRandomPersona}
                       onShuffle={shufflePersonas}
+                      viewMode={viewMode}
                     />
                   </div>
                   
