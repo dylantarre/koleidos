@@ -474,7 +474,7 @@ function App() {
               <h1 className={`text-5xl text-gradient font-display tracking-wide font-[400] transition-all duration-1000 delay-300 ${
                 isLogoInView && shouldAnimateLogo ? 'opacity-100 translate-x-0 blur-0' : 'opacity-0 -translate-x-8 blur-sm'
               }`}>
-                koleidos
+                kolidos
               </h1>
             </div>
             <div className="flex items-center gap-2">
@@ -536,7 +536,7 @@ function App() {
                       </button>
                     )}
                     <a
-                      href="https://github.com/dylantarre/koleidos"
+                      href="https://github.com/dylantarre/kolidos"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"
