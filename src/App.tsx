@@ -8,7 +8,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { TestReport } from './components/TestReport';
 import type { Persona, TestReport as TestReportType } from './types';
 import { isValidUrl, checkWebsiteAvailability } from './utils/url';
-import { generatePersonas } from './lib/personaGenerator';
+import { generatePersonas, fetchPersonas } from './lib/personaGenerator';
 
 function App() {
   const { user, profile } = useAuth();
@@ -46,6 +46,11 @@ function App() {
   const [message, setMessage] = useState('');
   const [personaType, setPersonaType] = useState<'random' | 'potential'>('random');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [shouldGeneratePersonas, setShouldGeneratePersonas] = useState(false);
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [testStarted, setTestStarted] = useState(false);
+  const [testCompleted, setTestCompleted] = useState(false);
 
   // Reset state when URL changes
   useEffect(() => {
@@ -63,6 +68,7 @@ function App() {
     
     // Reset personas to initial state
     setPersonas([]);
+    setShouldGeneratePersonas(true); // Trigger persona generation
   }, [urlInput]);
 
   const checkUrl = async () => {
@@ -255,134 +261,55 @@ function App() {
     return obj && typeof obj === 'object' && 'id' in obj && 'status' in obj;
   };
 
-  const startTesting = async () => {
-    if (!isUrlValid || !personas.length) return;
+  const handleStartTesting = async () => {
+    if (!url) return;
     
     setIsLoading(true);
-    setChatMessages(prev => {
-      const userMessages = prev.filter(msg => msg.sender === 'user');
-      return [...userMessages, {
-        id: Date.now().toString(),
-        content: 'Testing in progress...',
-        sender: 'system',
-        timestamp: Date.now(),
-      }];
-    });
-
-    // Update all personas to testing state
-    setPersonas(current => 
-      current.map(p => ({ ...p, status: 'testing' as const }))
-    );
-
-    // Run all persona tests simultaneously
-    const testPromises = personas.map(async (persona) => {
-      const startTime = Date.now();
-      
-      // Simulate test duration between 2-5 seconds
-      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
-      
-      const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      
-      setPersonas(current =>
-        current.map(p => {
-          if (p.id !== persona.id) return p;
-          
-          const updatedPersona = {
-            ...p,
-            status: 'completed' as const,
-            feedback: `Found the website ${urlInput} to be quite interesting. The navigation could be improved...`,
-            timeElapsed: parseFloat(timeElapsed),
-            messages: [
-              ...(p.messages || []),
-              {
-                id: Date.now().toString(),
-                content: `Testing completed in ${timeElapsed}s`,
-                messageType: 'persona' as const,
-                timestamp: Date.now()
-              }
-            ]
-          };
-          
-          return isPersona(updatedPersona) ? updatedPersona : p;
-        })
-      );
-
-      setReport(current => 
-        current ? { ...current, completedTests: current.completedTests + 1 } : null
-      );
-      
-      return { personaId: persona.id, timeElapsed };
-    });
-
+    
     try {
-      await Promise.all(testPromises);
+      const isAvailable = await checkWebsiteAvailability(url);
       
-      setReport(current => current ? {
-        ...current,
-        summary: 'Overall, the website shows promise but has several areas for improvement...',
-        successes: [
-          'Clean and modern design',
-          'Fast loading times',
-          'Mobile responsive layout'
-        ],
-        recommendations: [
-          'Improve navigation structure',
-          'Enhance mobile responsiveness',
-          'Add more contrast to call-to-action buttons'
-        ],
-        commonIssues: [
-          'Navigation is confusing for first-time users',
-          'Mobile layout breaks on some devices',
-          'Color contrast ratio doesn\'t meet WCAG standards'
-        ],
-        overallScore: 75
-      } : null);
-
-      setChatMessages(prev => {
-        const userMessages = prev.filter(msg => msg.sender === 'user');
-        return [...userMessages, {
-          id: Date.now().toString(),
-          content: `Testing complete! I've analyzed ${urlInput} with all personas. Would you like to view the detailed report?`,
-          sender: 'system',
-          timestamp: Date.now(),
-        }];
-      });
+      if (!isAvailable) {
+        setError('Website is not available. Please check the URL and try again.');
+        setIsLoading(false);
+        return;
+      }
       
-      setShowReport(true);
+      // Trigger persona generation via the useEffect
+      setShouldGeneratePersonas(true);
       
-      setTimeout(() => {
-        reportContainerRef.current?.scrollTo({
-          top: 0,
-          behavior: 'smooth'
-        });
-      }, 300);
+      // Rest of the function...
     } catch (error) {
       console.error('Error during testing:', error);
-      setChatMessages(prev => {
-        const userMessages = prev.filter(msg => msg.sender === 'user');
-        return [...userMessages, {
-          id: Date.now().toString(),
-          content: 'Sorry, there was an error testing the website. Please try again.',
-          sender: 'system',
-          timestamp: Date.now(),
-        }];
-      });
+      setError('Sorry, there was an error testing the website. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleResetTest = () => {
+    setUrl('');
+    setUrlInput('');
+    setReport(null);
+    setShowReport(false);
+    setTestStarted(false);
+    setTestCompleted(false);
+    setIsLoading(false);
+    setError(null);
+    setChatMessages([{
+      id: 'initial',
+      content: 'Enter a website URL above and I\'ll help test it with our personas.',
+      sender: 'system',
+      timestamp: Date.now(),
+    }]);
+    
+    // Trigger persona generation via the useEffect
+    setShouldGeneratePersonas(true);
+  };
+
   const addRandomPersona = () => {
-    const newPersona: Persona = {
-      id: Date.now().toString(),
-      name: 'New User',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde',
-      type: 'General User',
-      description: 'Average internet user with moderate technical skills',
-      status: 'idle',
-      isLocked: false
-    };
-    setPersonas(current => [...current, newPersona]);
+    // Trigger persona generation via the useEffect
+    setShouldGeneratePersonas(true);
   };
 
   const removePersona = (id: string) => {
@@ -443,6 +370,27 @@ function App() {
 
   const handleGeneratePersonas = undefined;
   const handleMessage = undefined;
+
+  // Initialize personas
+  useEffect(() => {
+    if (shouldGeneratePersonas) {
+      setShouldGeneratePersonas(false);
+      setIsLoading(true);
+      
+      // Use the new async function to fetch personas from the API
+      fetchPersonas(5)
+        .then(fetchedPersonas => {
+          setPersonas(fetchedPersonas);
+          setIsLoading(false);
+        })
+        .catch(error => {
+          console.error('Error fetching personas:', error);
+          // Fallback to local generation if API fails
+          setPersonas(generatePersonas(5));
+          setIsLoading(false);
+        });
+    }
+  }, [shouldGeneratePersonas]);
 
   return (
     <div className="min-h-screen bg-gray-200 dark:bg-dark-blue transition-colors overflow-x-hidden">
@@ -628,7 +576,7 @@ function App() {
                   </div>
                   {isUrlValid && personas.length > 0 && (
                     <button
-                      onClick={startTesting}
+                      onClick={handleStartTesting}
                       disabled={!personas.some(p => p.status === 'idle')}
                       className="w-full px-4 py-2 bg-gradient-custom text-white rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-glow flex items-center justify-center gap-2"
                     >

@@ -54,4 +54,68 @@ export function generatePlaceholderPersona(index: number): Persona {
 
 export function generatePersonas(count: number): Persona[] {
   return Array(count).fill(null).map((_, index) => generatePlaceholderPersona(index));
+}
+
+// API key for Kolidos API
+const API_KEY = 'd7342c173c86ec331b94e5f28b600412a992a9addd3a2a0fc3efcc87450871a1';
+
+/**
+ * Fetches a random persona from the Kolidos API
+ * @returns Promise<Persona>
+ */
+export async function fetchRandomPersona(): Promise<Persona> {
+  try {
+    const response = await fetch('https://gen.kolidos.com/random-name', {
+      method: 'GET',
+      headers: {
+        'X-API-Key': API_KEY
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Create a persona from the API response
+    return {
+      id: `persona-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: data.name,
+      type: getRandomItem(PLACEHOLDER_TYPES),
+      description: data.base_persona,
+      avatar: `https://api.dicebear.com/7.x/personas/svg?seed=${data.name.replace(/\s+/g, '')}`,
+      status: 'idle',
+      isLocked: false,
+      messages: []
+    };
+  } catch (error) {
+    console.error('Error fetching persona from API:', error);
+    // Fallback to a placeholder persona if the API call fails
+    return generatePlaceholderPersona(Math.floor(Math.random() * PLACEHOLDER_NAMES.length));
+  }
+}
+
+/**
+ * Fetches multiple personas from the Kolidos API
+ * @param count Number of personas to fetch
+ * @returns Promise<Persona[]>
+ */
+export async function fetchPersonas(count: number): Promise<Persona[]> {
+  try {
+    const personaPromises = Array(count)
+      .fill(null)
+      .map(() => fetchRandomPersona());
+    
+    return await Promise.all(personaPromises);
+  } catch (error) {
+    console.error('Error fetching personas:', error);
+    // Fallback to placeholder personas if the API calls fail
+    return generatePersonas(count);
+  }
+}
+
+// Helper function to get a random item from an array
+function getRandomItem<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
 } 
