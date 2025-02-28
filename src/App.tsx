@@ -8,7 +8,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { TestReport } from './components/TestReport';
 import type { Persona, TestReport as TestReportType } from './types';
 import { isValidUrl, checkWebsiteAvailability } from './utils/url';
-import { generatePersonas, fetchPersonas } from './lib/personaGenerator';
+import { generatePersonas, fetchPersonas, fetchRandomPersona, generatePlaceholderPersona } from './lib/personaGenerator';
 
 function App() {
   const { user, profile } = useAuth();
@@ -184,59 +184,131 @@ function App() {
     );
   };
 
-  const shufflePersonas = () => {
-    setPersonas(current => {
-      const locked = current.filter(p => p.isLocked);
-      const unlockedCount = current.filter(p => !p.isLocked).length;
-      
-      // Generate new personas for unlocked slots
-      const newPersonas = Array(unlockedCount).fill(null).map(() => ({
-        id: Date.now().toString() + Math.random(),
-        name: `${[
-          'Analytical Anna',
-          'Digital David',
-          'Mobile Maria',
-          'Social Sophie',
-          'Gaming Gary',
-          'Remote Rachel',
-          'Trendy Tyler',
-          'Eco-conscious Emma',
-          'Budget Brian',
-          'Luxury Lisa'
-        ][Math.floor(Math.random() * 10)]}`,
-        avatar: [
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d',
-          'https://images.unsplash.com/photo-1438761681033-6461ffad8d80',
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e',
-          'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d',
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb',
-          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6'
-        ][Math.floor(Math.random() * 7)],
-        type: [
-          'Digital Native',
-          'Remote Worker',
-          'Social Media Expert',
-          'Mobile-First User',
-          'Tech Enthusiast',
-          'Casual Browser',
-          'Power User'
-        ][Math.floor(Math.random() * 7)],
-        description: [
-          'Expects seamless digital experiences across all devices',
-          'Values efficiency and clear navigation in applications',
-          'Highly engaged with social features and sharing capabilities',
-          'Primarily accesses content through mobile devices',
-          'Early adopter of new technologies and features',
-          'Prefers simple and straightforward interfaces',
-          'Looks for advanced features and customization options'
-        ][Math.floor(Math.random() * 7)],
-        status: 'idle' as const,
-        isLocked: false
-      }));
-      
-      return [...locked, ...newPersonas];
+  const refreshPersona = async (id: string) => {
+    setPersonas((prev) => {
+      return prev.map((p) => {
+        if (p.id === id) {
+          const loadingPersona: Persona = {
+            ...p,
+            status: 'loading',
+            name: 'Loading...',
+            description: 'Fetching new persona...',
+            avatar: '/placeholder-avatar.png',
+          };
+          return loadingPersona;
+        }
+        return p;
+      });
     });
+
+    try {
+      const newPersona = await fetchRandomPersona();
+      
+      setPersonas((prev) => {
+        return prev.map((p) => {
+          if (p.id === id) {
+            const updatedPersona: Persona = {
+              ...p,
+              ...newPersona,
+              id: id, // Keep the original ID
+              isLocked: false,
+              status: 'idle',
+            };
+            return updatedPersona;
+          }
+          return p;
+        });
+      });
+    } catch (_err) {
+      // If API fails, use placeholder
+      const placeholder = generatePlaceholderPersona(Math.floor(Math.random() * 8));
+      
+      setPersonas((prev) => {
+        return prev.map((p) => {
+          if (p.id === id) {
+            const updatedPersona: Persona = {
+              ...p,
+              ...placeholder,
+              id: id, // Keep the original ID
+              isLocked: false,
+              status: 'idle',
+            };
+            return updatedPersona;
+          }
+          return p;
+        });
+      });
+    }
+  };
+
+  const shufflePersonas = async () => {
+    // Count how many personas are not locked
+    const unlockedCount = personas.filter(p => !p.isLocked).length;
+    
+    // Set all unlocked personas to loading state
+    setPersonas(prev => prev.map(p => {
+      if (p.isLocked) return p;
+      
+      const loadingPersona: Persona = {
+        ...p,
+        status: 'loading',
+        name: 'Loading...',
+        description: 'Fetching new persona...',
+        avatar: '/placeholder-avatar.png',
+      };
+      return loadingPersona;
+    }));
+    
+    try {
+      // Fetch new personas from the API
+      const newPersonas = await fetchPersonas(unlockedCount);
+      let newPersonaIndex = 0;
+      
+      // Update the personas state with the new personas
+      setPersonas(prev => prev.map(p => {
+        if (p.isLocked) return p;
+        
+        const newPersona = newPersonas[newPersonaIndex++];
+        const updatedPersona: Persona = {
+          ...p,
+          name: newPersona.name,
+          type: newPersona.type,
+          description: newPersona.description,
+          avatar: newPersona.avatar,
+          status: 'idle',
+          messages: [],
+          feedback: undefined,
+          timeElapsed: undefined
+        };
+        return updatedPersona;
+      }));
+    } catch (_err) {
+      console.error('Error shuffling personas');
+      
+      // Fallback to local generation if API fails
+      setPersonas(prev => {
+        const newPersonas = generatePersonas(unlockedCount);
+        let newPersonaIndex = 0;
+        
+        return prev.map(p => {
+          if (p.isLocked) return p;
+          
+          const newPersona = newPersonas[newPersonaIndex++];
+          const updatedPersona: Persona = {
+            ...p,
+            name: newPersona.name,
+            type: newPersona.type,
+            description: newPersona.description,
+            avatar: newPersona.avatar,
+            status: 'idle',
+            messages: [],
+            feedback: undefined,
+            timeElapsed: undefined
+          };
+          return updatedPersona;
+        });
+      });
+    }
   };
 
   useEffect(() => {
@@ -314,58 +386,6 @@ function App() {
 
   const removePersona = (id: string) => {
     setPersonas(current => current.filter(p => p.id !== id));
-  };
-
-  const refreshPersona = (id: string) => {
-    setPersonas(current => current.map(p => {
-      if (p.id !== id) return p;
-      
-      return {
-        ...p,
-        name: [
-          'Analytical Anna',
-          'Digital David',
-          'Mobile Maria',
-          'Social Sophie',
-          'Gaming Gary',
-          'Remote Rachel',
-          'Trendy Tyler',
-          'Eco-conscious Emma',
-          'Budget Brian',
-          'Luxury Lisa'
-        ][Math.floor(Math.random() * 10)],
-        avatar: [
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d',
-          'https://images.unsplash.com/photo-1438761681033-6461ffad8d80',
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e',
-          'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d',
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb',
-          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6'
-        ][Math.floor(Math.random() * 7)],
-        type: [
-          'Digital Native',
-          'Remote Worker',
-          'Social Media Expert',
-          'Mobile-First User',
-          'Tech Enthusiast',
-          'Casual Browser',
-          'Power User'
-        ][Math.floor(Math.random() * 7)],
-        description: [
-          'Expects seamless digital experiences across all devices',
-          'Values efficiency and clear navigation in applications',
-          'Highly engaged with social features and sharing capabilities',
-          'Primarily accesses content through mobile devices',
-          'Early adopter of new technologies and features',
-          'Prefers simple and straightforward interfaces',
-          'Looks for advanced features and customization options'
-        ][Math.floor(Math.random() * 7)],
-        status: 'idle' as const,
-        feedback: undefined,
-        timeElapsed: undefined
-      };
-    }));
   };
 
   const handleGeneratePersonas = undefined;
@@ -768,22 +788,16 @@ function App() {
                       ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr' 
                       : 'flex flex-col gap-2'
                   } pb-6`}>
-                    {personas.map((persona, index) => {
-                      const row = Math.floor(index / 2);
-                      const col = index % 2;
-                      return (
-                        <PersonaCard
-                          key={persona.id}
-                          persona={persona}
-                          onRemove={removePersona}
-                          onRefresh={refreshPersona}
-                          onToggleLock={toggleLock}
-                          index={index}
-                          gridPosition={{ row, col }}
-                          viewMode={viewMode}
-                        />
-                      );
-                    })}
+                    {personas.map((persona, index) => (
+                      <PersonaCard
+                        key={persona.id}
+                        persona={persona}
+                        onRefresh={refreshPersona}
+                        onToggleLock={toggleLock}
+                        index={index}
+                        viewMode={viewMode}
+                      />
+                    ))}
                     <PersonaCard
                       isControlCard
                       onAdd={addRandomPersona}
