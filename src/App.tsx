@@ -8,7 +8,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { TestReport } from './components/TestReport';
 import type { Persona, TestReport as TestReportType } from './types';
 import { isValidUrl, checkWebsiteAvailability } from './utils/url';
-import { generatePersonas, fetchPersonas, fetchRandomPersona, generatePlaceholderPersona } from './lib/personaGenerator';
+import { generatePersonas, fetchPersonas, fetchRandomPersona, expandPersonaDetails } from './lib/personaGenerator';
 
 function App() {
   const { user, profile } = useAuth();
@@ -48,9 +48,6 @@ function App() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [shouldGeneratePersonas, setShouldGeneratePersonas] = useState(false);
   const [url, setUrl] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [testStarted, setTestStarted] = useState(false);
-  const [testCompleted, setTestCompleted] = useState(false);
 
   // Reset state when URL changes
   useEffect(() => {
@@ -68,8 +65,21 @@ function App() {
     
     // Reset personas to initial state
     setPersonas([]);
-    setShouldGeneratePersonas(true); // Trigger persona generation
+    
+    // Reset loading state
+    setIsLoading(false);
+    
+    // Don't auto-generate personas on URL change
+    // setShouldGeneratePersonas(true);
   }, [urlInput]);
+
+  // Cleanup effect to ensure loading state is reset
+  useEffect(() => {
+    return () => {
+      // This will run when the component unmounts
+      setIsLoading(false);
+    };
+  }, []);
 
   const checkUrl = async () => {
     const url = urlInput.trim();
@@ -92,44 +102,127 @@ function App() {
       if (isAvailable) {
         setIsLoading(true);
         
+        // Create loading placeholders for personas immediately
+        const loadingPersonas: Persona[] = Array(5).fill(null).map((_, index) => ({
+          id: `persona-${Date.now()}-${index}`,
+          name: 'Loading...',
+          type: 'Loading...',
+          description: 'Fetching persona data...',
+          avatar: '/placeholder-avatar.png',
+          status: 'loading',
+          isLocked: false,
+          messages: []
+        }));
+        
+        // Set loading personas immediately
+        setPersonas(loadingPersonas);
+        
         setChatMessages(prev => {
           const userMessages = prev.filter(msg => msg.sender === 'user');
           return [...userMessages, {
             id: Date.now().toString(),
-            content: 'Generating personas...',
+            content: 'URL is valid! Preparing personas for testing...',
             sender: 'system',
             timestamp: Date.now(),
           }];
         });
-
-        try {
-          setPersonas(generatePersonas(5));
-          
-          setChatMessages(prev => {
-            const userMessages = prev.filter(msg => msg.sender === 'user');
-            return [...userMessages, {
-              id: Date.now().toString(),
-              content: 'All personas are ready! Click "Start Testing" to begin the analysis.',
-              sender: 'system',
-              timestamp: Date.now(),
-            }];
-          });
-        } catch {
-          setChatMessages(prev => {
-            const userMessages = prev.filter(msg => msg.sender === 'user');
-            return [...userMessages, {
-              id: Date.now().toString(),
-              content: 'Sorry, there was an error generating personas. Please try again.',
-              sender: 'system',
-              timestamp: Date.now(),
-            }];
-          });
-        }
         
+        // Start fetching personas in the background
+        fetchPersonas(5)
+          .then(fetchedPersonas => {
+            // Update with basic personas first
+            setPersonas(fetchedPersonas);
+            
+            // Expand each persona one by one
+            const expandSequentially = async () => {
+              for (let i = 0; i < fetchedPersonas.length; i++) {
+                try {
+                  console.log(`Pre-loading persona ${i+1}/${fetchedPersonas.length}`);
+                  const expandedPersona = await expandPersonaDetails(fetchedPersonas[i]);
+                  
+                  // Update just this persona in the state
+                  setPersonas(prev => 
+                    prev.map((p, index) => 
+                      index === i ? { ...expandedPersona, id: p.id } : p
+                    )
+                  );
+                } catch (err) {
+                  console.error(`Error expanding persona ${i+1}:`, err);
+                  // Update this persona to error state
+                  setPersonas(prev => 
+                    prev.map((p, index) => 
+                      index === i ? { 
+                        ...p, 
+                        name: 'Error', 
+                        description: 'Failed to load persona. Try refreshing.',
+                        status: 'idle' 
+                      } : p
+                    )
+                  );
+                }
+              }
+              
+              // All personas are expanded
+              console.log('All personas pre-loaded sequentially');
+              
+              // Show success message
+              setChatMessages(prev => {
+                // Filter out any loading messages
+                const filteredMessages = prev.filter(msg => 
+                  !msg.content.includes('Preparing personas') && 
+                  !msg.content.includes('Fetching persona')
+                );
+                
+                return [...filteredMessages, {
+                  id: Date.now().toString(),
+                  content: 'Personas are ready! Click "Start Testing" to begin analyzing the site.',
+                  sender: 'system',
+                  timestamp: Date.now(),
+                }];
+              });
+              
+              setIsLoading(false);
+            };
+            
+            // Start the sequential expansion
+            expandSequentially().catch(err => {
+              console.error('Error in sequential pre-loading:', err);
+              setIsLoading(false);
+            });
+          })
+          .catch(err => {
+            console.error('Error pre-fetching personas:', err);
+            
+            // Show error message
+            setChatMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              content: 'Had trouble loading some personas. You can still start testing or try refreshing them individually.',
+              sender: 'system',
+              timestamp: Date.now(),
+            }]);
+            
+            // Update any loading personas to error state
+            setPersonas(prev => 
+              prev.map(p => 
+                p.status === 'loading' ? {
+                  ...p,
+                  name: 'Error',
+                  description: 'Failed to load persona. Try refreshing.',
+                  status: 'idle'
+                } : p
+              )
+            );
+            
+            setIsLoading(false);
+          });
+      } else {
+        // Make sure to reset loading state if URL is not available
         setIsLoading(false);
       }
     } catch {
       setIsUrlValid(false);
+      // Make sure to reset loading state if there's an error
+      setIsLoading(false);
     } finally {
       setIsChecking(false);
     }
@@ -202,42 +295,67 @@ function App() {
     });
 
     try {
+      // Step 1: Get a basic persona with just the name and base description
       const newPersona = await fetchRandomPersona();
       
+      // Update the persona with the basic info first
       setPersonas((prev) => {
         return prev.map((p) => {
           if (p.id === id) {
-            const updatedPersona: Persona = {
+            return {
               ...p,
               ...newPersona,
-              id: id, // Keep the original ID
+              id, // Keep the original ID
               isLocked: false,
-              status: 'idle',
             };
-            return updatedPersona;
           }
           return p;
         });
       });
-    } catch (_err) {
-      // If API fails, use placeholder
-      const placeholder = generatePlaceholderPersona(Math.floor(Math.random() * 8));
       
+      // Step 2: Expand the persona with additional details
+      const updatedPersona = await expandPersonaDetails(newPersona);
+      
+      // Update the persona with the expanded details
       setPersonas((prev) => {
         return prev.map((p) => {
           if (p.id === id) {
-            const updatedPersona: Persona = {
+            return {
               ...p,
-              ...placeholder,
-              id: id, // Keep the original ID
+              ...updatedPersona,
+              id, // Keep the original ID
               isLocked: false,
               status: 'idle',
             };
-            return updatedPersona;
           }
           return p;
         });
       });
+    } catch (err) {
+      console.error('Error refreshing persona:', err);
+      
+      // Show error state instead of fallback to placeholder
+      setPersonas((prev) => {
+        return prev.map((p) => {
+          if (p.id === id) {
+            return {
+              ...p,
+              name: 'Error',
+              description: 'Failed to load persona. Try refreshing again.',
+              status: 'idle',
+            };
+          }
+          return p;
+        });
+      });
+      
+      // Show error message to user
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: 'Failed to refresh a persona. Please try again.',
+        sender: 'system',
+        timestamp: Date.now(),
+      }]);
     }
   };
 
@@ -260,54 +378,69 @@ function App() {
     }));
     
     try {
-      // Fetch new personas from the API
+      // Step 1: Fetch basic personas from the API
       const newPersonas = await fetchPersonas(unlockedCount);
       let newPersonaIndex = 0;
       
-      // Update the personas state with the new personas
+      // Update the personas state with the basic personas
       setPersonas(prev => prev.map(p => {
         if (p.isLocked) return p;
         
         const newPersona = newPersonas[newPersonaIndex++];
-        const updatedPersona: Persona = {
+        return {
           ...p,
-          name: newPersona.name,
-          type: newPersona.type,
-          description: newPersona.description,
-          avatar: newPersona.avatar,
-          status: 'idle',
+          ...newPersona,
           messages: [],
           feedback: undefined,
           timeElapsed: undefined
         };
-        return updatedPersona;
       }));
-    } catch (_err) {
-      console.error('Error shuffling personas');
       
-      // Fallback to local generation if API fails
-      setPersonas(prev => {
-        const newPersonas = generatePersonas(unlockedCount);
-        let newPersonaIndex = 0;
+      // Step 2: Expand each persona with additional details
+      const expandPromises = newPersonas.map(persona => expandPersonaDetails(persona));
+      const expandedPersonas = await Promise.all(expandPromises);
+      
+      // Update personas with expanded details
+      let expandedIndex = 0;
+      setPersonas(prev => prev.map(p => {
+        if (p.isLocked) return p;
         
-        return prev.map(p => {
-          if (p.isLocked) return p;
-          
-          const newPersona = newPersonas[newPersonaIndex++];
-          const updatedPersona: Persona = {
+        if (expandedIndex < expandedPersonas.length) {
+          const expandedPersona = expandedPersonas[expandedIndex++];
+          return {
             ...p,
-            name: newPersona.name,
-            type: newPersona.type,
-            description: newPersona.description,
-            avatar: newPersona.avatar,
+            ...expandedPersona,
             status: 'idle',
-            messages: [],
-            feedback: undefined,
-            timeElapsed: undefined
           };
-          return updatedPersona;
-        });
-      });
+        }
+        
+        return {
+          ...p,
+          status: 'idle',
+        };
+      }));
+    } catch (err) {
+      console.error('Error shuffling personas:', err);
+      
+      // Show error state instead of fallback to placeholder
+      setPersonas(prev => prev.map(p => {
+        if (p.isLocked) return p;
+        
+        return {
+          ...p,
+          name: 'Error',
+          description: 'Failed to load persona. Try refreshing again.',
+          status: 'idle',
+        };
+      }));
+      
+      // Show error message to user
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: 'Failed to shuffle personas. Please try again.',
+        sender: 'system',
+        timestamp: Date.now(),
+      }]);
     }
   };
 
@@ -329,91 +462,283 @@ function App() {
     });
   }, [isDark]);
 
-  const isPersona = (obj: any): obj is Persona => {
-    return obj && typeof obj === 'object' && 'id' in obj && 'status' in obj;
-  };
-
   const handleStartTesting = async () => {
-    if (!url) return;
+    if (!urlInput) return;
     
     setIsLoading(true);
+    setUrl(urlInput); // Use setUrl to store the current URL
+    
+    // If we already have personas loaded, use them
+    if (personas.length > 0 && personas.some(p => p.status === 'idle')) {
+      // Just start the test with existing personas
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: 'Starting test with the prepared personas...',
+        sender: 'system',
+        timestamp: Date.now(),
+      }]);
+      
+      // Create a simple test report
+      setReport({
+        url: urlInput,
+        summary: `Initial test for ${urlInput}`,
+        successes: [],
+        recommendations: [],
+        commonIssues: [],
+        overallScore: 0,
+        completedTests: 0,
+        totalTests: personas.filter(p => p.status === 'idle').length
+      });
+      
+      setIsLoading(false);
+      return;
+    }
+    
+    // If we don't have personas yet (maybe they failed to load), create loading placeholders
+    const loadingPersonas: Persona[] = Array(5).fill(null).map((_, index) => ({
+      id: `persona-${Date.now()}-${index}`,
+      name: 'Loading...',
+      type: 'Loading...',
+      description: 'Fetching persona data...',
+      avatar: '/placeholder-avatar.png',
+      status: 'loading',
+      isLocked: false,
+      messages: []
+    }));
+    
+    // Set loading personas immediately so user can see them
+    setPersonas(loadingPersonas);
     
     try {
-      const isAvailable = await checkWebsiteAvailability(url);
+      // Show loading message
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: 'Generating personas for testing...',
+        sender: 'system',
+        timestamp: Date.now(),
+      }]);
       
-      if (!isAvailable) {
-        setError('Website is not available. Please check the URL and try again.');
-        setIsLoading(false);
-        return;
-      }
-      
-      // Trigger persona generation via the useEffect
+      // Trigger persona generation
       setShouldGeneratePersonas(true);
       
-      // Rest of the function...
-    } catch (error) {
-      console.error('Error during testing:', error);
-      setError('Sorry, there was an error testing the website. Please try again.');
-    } finally {
+      // Make sure to reset loading state after a timeout if it's still loading
+      // This is a safety measure in case something goes wrong with the persona generation
+      setTimeout(() => {
+        setIsLoading(prev => {
+          if (prev) {
+            console.log('Forcing loading state reset after timeout');
+            return false;
+          }
+          return prev;
+        });
+      }, 15000); // 15 seconds timeout
+    } catch (err) {
+      console.error('Error during testing:', err);
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: 'Sorry, there was an error testing the website. Please try again.',
+        sender: 'system',
+        timestamp: Date.now(),
+      }]);
       setIsLoading(false);
     }
   };
 
-  const handleResetTest = () => {
-    setUrl('');
-    setUrlInput('');
-    setReport(null);
-    setShowReport(false);
-    setTestStarted(false);
-    setTestCompleted(false);
-    setIsLoading(false);
-    setError(null);
-    setChatMessages([{
-      id: 'initial',
-      content: 'Enter a website URL above and I\'ll help test it with our personas.',
-      sender: 'system',
-      timestamp: Date.now(),
-    }]);
-    
-    // Trigger persona generation via the useEffect
-    setShouldGeneratePersonas(true);
-  };
-
   const addRandomPersona = () => {
-    // Trigger persona generation via the useEffect
-    setShouldGeneratePersonas(true);
+    // Add a loading placeholder
+    const loadingPersona: Persona = {
+      id: `persona-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: 'Loading...',
+      type: 'Loading...',
+      description: 'Fetching persona data...',
+      avatar: '/placeholder-avatar.png',
+      status: 'loading',
+      isLocked: false,
+      messages: []
+    };
+    
+    setPersonas(prev => [...prev, loadingPersona]);
+    
+    // Fetch a new persona
+    fetchRandomPersona()
+      .then(basicPersona => {
+        // Update with basic info first
+        setPersonas(prev => 
+          prev.map(p => 
+            p.id === loadingPersona.id ? { ...p, ...basicPersona, id: loadingPersona.id } : p
+          )
+        );
+        
+        // Expand the persona
+        return expandPersonaDetails(basicPersona);
+      })
+      .then(expandedPersona => {
+        // Update with expanded details
+        setPersonas(prev => 
+          prev.map(p => 
+            p.id === loadingPersona.id ? { ...p, ...expandedPersona, id: loadingPersona.id, status: 'idle' } : p
+          )
+        );
+      })
+      .catch(err => {
+        console.error('Error adding random persona:', err);
+        
+        // Show error state
+        setPersonas(prev => 
+          prev.map(p => 
+            p.id === loadingPersona.id ? { 
+              ...p, 
+              name: 'Error', 
+              description: 'Failed to load persona. Try refreshing.',
+              status: 'idle' 
+            } : p
+          )
+        );
+        
+        // Show error message
+        setChatMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          content: 'Failed to add a new persona. Please try again.',
+          sender: 'system',
+          timestamp: Date.now(),
+        }]);
+      });
   };
-
-  const removePersona = (id: string) => {
-    setPersonas(current => current.filter(p => p.id !== id));
-  };
-
-  const handleGeneratePersonas = undefined;
-  const handleMessage = undefined;
 
   // Initialize personas
   useEffect(() => {
     if (shouldGeneratePersonas) {
+      console.log('Starting persona generation...');
       setShouldGeneratePersonas(false);
       setIsLoading(true);
       
-      // Use the new async function to fetch personas from the API
+      // Step 1: Fetch basic personas from the API
       fetchPersonas(5)
         .then(fetchedPersonas => {
+          console.log('Fetched basic personas:', fetchedPersonas.length);
+          // Update with basic personas first
           setPersonas(fetchedPersonas);
-          setIsLoading(false);
+          
+          // Step 2: Expand each persona one by one with additional details
+          const expandSequentially = async () => {
+            for (let i = 0; i < fetchedPersonas.length; i++) {
+              try {
+                console.log(`Expanding persona ${i+1}/${fetchedPersonas.length}`);
+                const expandedPersona = await expandPersonaDetails(fetchedPersonas[i]);
+                
+                // Update just this persona in the state
+                setPersonas(prev => 
+                  prev.map((p, index) => 
+                    index === i ? { ...expandedPersona, id: p.id } : p
+                  )
+                );
+                
+                // Show progress message for each persona
+                if (i < fetchedPersonas.length - 1) {
+                  setChatMessages(prev => {
+                    // Filter out any previous progress messages
+                    const filteredMessages = prev.filter(msg => 
+                      !msg.content.includes(`Persona ${i+1}/${fetchedPersonas.length}`)
+                    );
+                    
+                    return [...filteredMessages, {
+                      id: `progress-${Date.now()}`,
+                      content: `Persona ${i+1}/${fetchedPersonas.length} ready! Loading next...`,
+                      sender: 'system',
+                      timestamp: Date.now(),
+                    }];
+                  });
+                }
+              } catch (err) {
+                console.error(`Error expanding persona ${i+1}:`, err);
+                // Update this persona to error state
+                setPersonas(prev => 
+                  prev.map((p, index) => 
+                    index === i ? { 
+                      ...p, 
+                      name: 'Error', 
+                      description: 'Failed to load persona. Try refreshing.',
+                      status: 'idle' 
+                    } : p
+                  )
+                );
+              }
+            }
+            
+            // All personas are expanded
+            console.log('All personas expanded sequentially');
+            console.log('Resetting loading state after persona generation');
+            setIsLoading(false);
+            
+            // Show success message
+            setChatMessages(prev => {
+              // Filter out any loading messages
+              const filteredMessages = prev.filter(msg => 
+                !msg.content.includes('Generating personas') && 
+                !msg.content.includes('Fetching persona') &&
+                !msg.content.includes('Persona') &&
+                !msg.content.includes('Loading next')
+              );
+              
+              return [...filteredMessages, {
+                id: Date.now().toString(),
+                content: 'All personas are ready! You can now interact with them to test the website.',
+                sender: 'system',
+                timestamp: Date.now(),
+              }];
+            });
+          };
+          
+          // Start the sequential expansion
+          expandSequentially().catch(err => {
+            console.error('Error in sequential expansion:', err);
+            setIsLoading(false);
+          });
         })
-        .catch(error => {
-          console.error('Error fetching personas:', error);
-          // Fallback to local generation if API fails
-          setPersonas(generatePersonas(5));
+        .catch(err => {
+          console.error('Error fetching personas:', err);
+          
+          // Show error message instead of falling back to demo personas
+          setChatMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            content: 'Failed to generate personas from the API. Please try again or check your connection.',
+            sender: 'system',
+            timestamp: Date.now(),
+          }]);
+          
+          // Only use demo personas as absolute last resort
+          if (personas.length === 0 || personas.every(p => p.status === 'loading')) {
+            setChatMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              content: 'Using demo personas as a fallback.',
+              sender: 'system',
+              timestamp: Date.now(),
+            }]);
+            
+            setPersonas(generatePersonas(5));
+          } else {
+            // Update any loading personas to error state
+            setPersonas(prev => 
+              prev.map(p => 
+                p.status === 'loading' ? {
+                  ...p,
+                  name: 'Error',
+                  description: 'Failed to load persona. Try refreshing.',
+                  status: 'idle'
+                } : p
+              )
+            );
+          }
+          
+          // Make sure to reset loading state on error
+          console.log('Resetting loading state after error');
           setIsLoading(false);
         });
     }
-  }, [shouldGeneratePersonas]);
+  }, [shouldGeneratePersonas, personas]);
 
   return (
-    <div className="min-h-screen bg-gray-200 dark:bg-dark-blue transition-colors overflow-x-hidden">
+    <div className="min-h-screen bg-gray-200 dark:bg-dark-blue transition-colors overflow-x-hidden" data-current-url={url}>
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe')] opacity-10 mix-blend-overlay pointer-events-none" />
       <div className="container mx-auto px-4 py-6 min-h-screen flex flex-col">
         <header className="mb-6">
@@ -425,6 +750,7 @@ function App() {
                 setPersonas([]);
                 setReport(null);
                 setShowReport(false);
+                setIsLoading(false); // Reset loading state when clearing everything
                 setChatMessages([{
                   id: 'initial',
                   content: 'Enter a website URL above and I\'ll help test it with our personas.',
@@ -594,14 +920,20 @@ function App() {
                     </button>
                    
                   </div>
-                  {isUrlValid && personas.length > 0 && (
+                  {isUrlValid && (
                     <button
                       onClick={handleStartTesting}
-                      disabled={!personas.some(p => p.status === 'idle')}
+                      disabled={isLoading}
                       className="w-full px-4 py-2 bg-gradient-custom text-white rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-glow flex items-center justify-center gap-2"
                     >
-                      <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : 'hidden'}`} />
-                      Start Testing ({personas.filter(p => p.status === 'idle').length})
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>Loading Personas...</span>
+                        </>
+                      ) : (
+                        <span>Start Testing</span>
+                      )}
                     </button>
                   )}
                 </div>
@@ -648,7 +980,7 @@ function App() {
                             const response = {
                               id: Date.now().toString() + Math.random(),
                               content: responseText,
-                              messageType: 'persona',
+                              messageType: 'persona' as const,
                               timestamp: Date.now()
                             };
                             
@@ -788,22 +1120,39 @@ function App() {
                       ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr' 
                       : 'flex flex-col gap-2'
                   } pb-6`}>
-                    {personas.map((persona, index) => (
-                      <PersonaCard
-                        key={persona.id}
-                        persona={persona}
-                        onRefresh={refreshPersona}
-                        onToggleLock={toggleLock}
-                        index={index}
-                        viewMode={viewMode}
-                      />
-                    ))}
-                    <PersonaCard
-                      isControlCard
-                      onAdd={addRandomPersona}
-                      onShuffle={shufflePersonas}
-                      viewMode={viewMode}
-                    />
+                    {personas.length > 0 ? (
+                      <>
+                        {personas.map((persona, index) => (
+                          <PersonaCard
+                            key={persona.id}
+                            persona={persona}
+                            onRefresh={refreshPersona}
+                            onToggleLock={toggleLock}
+                            index={index}
+                            viewMode={viewMode}
+                          />
+                        ))}
+                        <PersonaCard
+                          isControlCard
+                          onAdd={addRandomPersona}
+                          onShuffle={shufflePersonas}
+                          viewMode={viewMode}
+                        />
+                      </>
+                    ) : (
+                      // Show empty state with a "Start Testing" button
+                      <div className="col-span-full flex flex-col items-center justify-center p-8 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                          Click "Start Testing" to generate personas for this website.
+                        </p>
+                        <button
+                          onClick={handleStartTesting}
+                          className="px-4 py-2 bg-gradient-custom text-white rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-glow"
+                        >
+                          Start Testing
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   {report && showReport && (

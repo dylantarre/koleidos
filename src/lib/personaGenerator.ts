@@ -1,4 +1,4 @@
-import type { Persona } from '../types';
+import type { Persona, ExpandedPersonaDetails } from '../types';
 
 const PLACEHOLDER_NAMES = [
   'Analytical Anna',
@@ -41,7 +41,7 @@ const PLACEHOLDER_AVATARS = [
 
 export function generatePlaceholderPersona(index: number): Persona {
   return {
-    id: `persona-${index + 1}`,
+    id: `persona-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: PLACEHOLDER_NAMES[index % PLACEHOLDER_NAMES.length],
     type: PLACEHOLDER_TYPES[index % PLACEHOLDER_TYPES.length],
     description: PLACEHOLDER_DESCRIPTIONS[index % PLACEHOLDER_DESCRIPTIONS.length],
@@ -56,43 +56,144 @@ export function generatePersonas(count: number): Persona[] {
   return Array(count).fill(null).map((_, index) => generatePlaceholderPersona(index));
 }
 
-// API key for Kolidos API
-const API_KEY = 'd7342c173c86ec331b94e5f28b600412a992a9addd3a2a0fc3efcc87450871a1';
-
 /**
- * Fetches a random persona from the Kolidos API
- * @returns Promise<Persona>
+ * Fetches a random persona name from the Kolidos API
+ * @returns Promise with name and base_persona
  */
-export async function fetchRandomPersona(): Promise<Persona> {
+export async function fetchRandomName(): Promise<{ name: string; base_persona: string }> {
   try {
-    const response = await fetch('https://gen.kolidos.com/random-name', {
+    // Use the proxy URL instead of direct API call
+    console.log('Fetching random name from API...');
+    const response = await fetch('/api/kolidos/random-name', {
       method: 'GET',
-      headers: {
-        'X-API-Key': API_KEY
-      }
+      // No need to include the API key here as it's handled by the proxy
     });
     
+    console.log('Random name API response status:', response.status);
+    
     if (!response.ok) {
+      console.error(`API request failed with status ${response.status}`);
       throw new Error(`API request failed with status ${response.status}`);
     }
     
     const data = await response.json();
+    console.log('Received random name data:', data);
+    return data;
+  } catch (error) {
+    console.error('Error fetching random name from API:', error);
+    throw error;
+  }
+}
+
+/**
+ * Expands a name into a full persona with the Kolidos API
+ * @param name The name to expand
+ * @param type Optional type/title for the persona
+ * @param description Optional description for the persona
+ * @returns Promise with the expanded persona details
+ */
+export async function expandPersona(
+  name: string, 
+  type?: string, 
+  description?: string
+): Promise<ExpandedPersonaDetails> {
+  try {
+    console.log(`Expanding persona: ${name} (${type})`);
+    const response = await fetch('/api/kolidos/expand-persona', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // API key is handled by the proxy
+      },
+      body: JSON.stringify({
+        name,
+        title: type,
+        description
+      })
+    });
     
-    // Create a persona from the API response
-    return {
+    console.log('Expand persona API response status:', response.status);
+    
+    if (!response.ok) {
+      console.error(`API request failed with status ${response.status}`);
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('Received expanded persona data:', data);
+    return data;
+  } catch (error) {
+    console.error('Error expanding persona from API:', error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches a random persona from the Kolidos API
+ * First gets a random name, then expands it into a full persona
+ * @returns Promise<Persona>
+ */
+export async function fetchRandomPersona(): Promise<Persona> {
+  try {
+    // Step 1: Get a random name
+    const nameData = await fetchRandomName();
+    
+    // Create a basic persona with just the name and base description
+    const basicPersona: Persona = {
       id: `persona-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: data.name,
+      name: nameData.name,
       type: getRandomItem(PLACEHOLDER_TYPES),
-      description: data.base_persona,
-      avatar: `https://api.dicebear.com/7.x/personas/svg?seed=${data.name.replace(/\s+/g, '')}`,
-      status: 'idle',
+      description: nameData.base_persona,
+      avatar: `https://api.dicebear.com/7.x/personas/svg?seed=${nameData.name.replace(/\s+/g, '')}`,
+      status: 'loading',
       isLocked: false,
-      messages: []
+      messages: [],
+      expanded: false
     };
+    
+    return basicPersona;
   } catch (error) {
     console.error('Error fetching persona from API:', error);
     // Fallback to a placeholder persona if the API call fails
     return generatePlaceholderPersona(Math.floor(Math.random() * PLACEHOLDER_NAMES.length));
+  }
+}
+
+/**
+ * Expands a basic persona with additional details from the API
+ * @param persona The basic persona to expand
+ * @returns Promise<Persona> with expanded details
+ */
+export async function expandPersonaDetails(persona: Persona): Promise<Persona> {
+  if (persona.expanded) {
+    return persona; // Already expanded
+  }
+  
+  try {
+    const expandedData = await expandPersona(
+      persona.name,
+      persona.type,
+      persona.description
+    );
+    
+    // Merge the expanded data with the existing persona
+    return {
+      ...persona,
+      expanded: true,
+      status: 'idle',
+      // Add any additional fields from the expanded data
+      // This will depend on what the API returns
+      expandedDetails: expandedData,
+      // You might want to update some fields based on the expanded data
+      description: expandedData.description || persona.description
+    };
+  } catch (error) {
+    console.error('Error expanding persona details:', error);
+    // Return the original persona but mark it as no longer loading
+    return {
+      ...persona,
+      status: 'idle'
+    };
   }
 }
 

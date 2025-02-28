@@ -10,18 +10,24 @@ export interface Persona {
   position?: number;
   feedback?: string;
   timeElapsed?: number;
+  expanded?: boolean;
+  expandedDetails?: ExpandedPersonaDetails; // Will hold the full expanded persona data from the API
   demographics?: {
     age: number;
     gender: string;
     occupation: string;
     education: string;
     location: string;
-  };
+  } | DemographicItem[]; // Allow both formats for demographics
   goals?: string[];
   frustrations?: string[];
   behaviors?: string[];
   motivations?: string[];
-  techProficiency?: string;
+  techProficiency?: string | {
+    high?: string;
+    moderate?: string;
+    low?: string;
+  };
   preferredChannels?: string[];
   messages?: Array<{
     id: string;
@@ -60,4 +66,33 @@ export interface DetailedPersona extends Persona {
     low?: string;
   };
   preferredChannels: string[];
+}
+
+// Interface for expanded persona details from the API
+export interface ExpandedPersonaDetails {
+  // Add fields based on what the API returns
+  description?: string;
+  background?: string;
+  personality?: string;
+  interests?: string[];
+  challenges?: string[];
+  goals?: string[];
+  frustrations?: string[];
+  behaviors?: string[];
+  motivations?: string[];
+  techProficiency?: string | {
+    high?: string;
+    moderate?: string;
+    low?: string;
+  };
+  preferredChannels?: string[];
+  demographics?: {
+    age?: number;
+    gender?: string;
+    occupation?: string;
+    education?: string;
+    location?: string;
+  } | DemographicItem[];
+  // Additional fields that might be returned
+  additionalInfo?: Record<string, string | number | boolean | string[]>;
 }
